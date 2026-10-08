@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""Small project helper for ORCD agent setup."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+REFERENCE_BLOCK = """\
+
+## ORCD / HPC context
+
+For ORCD-specific environment and execution guidance, also read:
+
+`.orcd/AGENTS_ORCD.md`
+
+Before expensive work, run:
+
+`orcd-agent context --json`
+"""
+
+
+def install_orcd_instructions(project_dir: Path, symlink: bool = False) -> Path:
+    source = ROOT / "AGENTS.md"
+    target = project_dir / ".orcd" / "AGENTS_ORCD.md"
+    if not source.exists():
+        raise FileNotFoundError(f"Missing template: {source}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() or target.is_symlink():
+        target.unlink()
+    if symlink:
+        target.symlink_to(source)
+    else:
+        shutil.copy2(source, target)
+    return target
+
+
+def has_reference_block(text: str) -> bool:
+    return ".orcd/AGENTS_ORCD.md" in text and "ORCD / HPC context" in text
+
+
+def append_reference_block(agents_path: Path) -> bool:
+    existing = agents_path.read_text(encoding="utf-8")
+    if has_reference_block(existing):
+        return False
+    separator = "" if existing.endswith("\n") else "\n"
+    agents_path.write_text(existing + separator + REFERENCE_BLOCK, encoding="utf-8")
+    return True
+
+
+def init_project(symlink: bool = False, append_reference: bool = False) -> int:
+    project_dir = Path.cwd()
+    try:
+        orcd_target = install_orcd_instructions(project_dir, symlink=symlink)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    agents_path = project_dir / "AGENTS.md"
+    action = "Symlinked" if symlink else "Copied"
+    print(f"{action} ORCD guidance to {orcd_target}")
+
+    if agents_path.exists():
+        if append_reference:
+            changed = append_reference_block(agents_path)
+            if changed:
+                print(f"Appended ORCD reference block to existing {agents_path}")
+            else:
+                print(f"Existing {agents_path} already references .orcd/AGENTS_ORCD.md")
+        else:
+            print(f"Left existing {agents_path} untouched.")
+            print("Existing AGENTS.md remains authoritative for project-specific instructions.")
+            print("Configure your agent/tooling to also read .orcd/AGENTS_ORCD.md, or re-run with --append-reference.")
+        return 0
+
+    agents_path.write_text(REFERENCE_BLOCK.lstrip(), encoding="utf-8")
+    print(f"Created {agents_path} with a small ORCD reference block.")
+    return 0
+
+
+def run_context(args: list[str]) -> int:
+    context_cmd = ROOT / "bin" / "orcd-context"
+    return subprocess.call([str(context_cmd), *args], env=os.environ.copy())
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="orcd-agent", description="ORCD agent helper commands.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    init = subparsers.add_parser("init", help="Install ORCD guidance into the current project.")
+    init.add_argument("--append-reference", action="store_true", help="Append a small ORCD reference block to AGENTS.md.")
+    init.add_argument("--symlink", action="store_true", help="Symlink .orcd/AGENTS_ORCD.md instead of copying it.")
+    context = subparsers.add_parser("context", help="Alias for orcd-context.")
+    context.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    if args.command == "init":
+        return init_project(symlink=args.symlink, append_reference=args.append_reference)
+    if args.command == "context":
+        context_args = ["--json"] if args.json else []
+        return run_context(context_args)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

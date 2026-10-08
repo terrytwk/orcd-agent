@@ -1,0 +1,10 @@
+{
+  "base_url": "https://orcd-docs.mit.edu",
+  "documents": 67,
+  "output": "docs/processed/orcd_docs.jsonl",
+  "sections": 519,
+  "source_branch": "main",
+  "source_commit": "da81128e1287f3a180817958dc7d5fdd6d462f38",
+  "source_repo": "https://github.com/mit-orcd/orcd-docs-edit.git",
+  "synced_at": "2026-10-07T01:53:15.087120+00:00"
+}

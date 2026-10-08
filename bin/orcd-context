@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Print lightweight ORCD runtime context for humans and coding agents."""
+
+from __future__ import annotations
+
+import os
+import argparse
+import json
+import shutil
+import socket
+import subprocess
+from pathlib import Path
+
+
+def env_first(*names: str, default: str = "not detected") -> str:
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return default
+
+
+def detect_node_type(hostname: str) -> str:
+    if os.environ.get("SLURM_JOB_ID"):
+        return "COMPUTE"
+    lowered = hostname.lower()
+    login_markers = ("login", "orcd-login", "txe1-login")
+    if any(marker in lowered for marker in login_markers):
+        return "LOGIN"
+    return "UNKNOWN"
+
+
+def module_list() -> str:
+    if not shutil.which("modulecmd") and not shutil.which("module"):
+        return "module command not available"
+
+    shell = os.environ.get("SHELL", "/bin/bash")
+    command = "module list"
+    try:
+        result = subprocess.run(
+            [shell, "-lc", command],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"unable to inspect modules: {exc}"
+
+    output = result.stdout.strip()
+    return output if output else "no modules reported"
+
+
+def recommendations(node_type: str) -> tuple[list[str], list[str]]:
+    do = [
+        "Keep searches scoped to this project.",
+        "Check/load modules before installing software.",
+        "Use `orcd-search \"<question>\"` for ORCD-specific guidance.",
+    ]
+    avoid = [
+        "Do not run `find /`, `grep -R /`, `du /`, or other filesystem-wide scans.",
+    ]
+
+    if node_type == "COMPUTE":
+        do.append("Run compute inside this Slurm allocation or submit a batch job.")
+    else:
+        do.append("Submit compute-heavy work with Slurm before running it.")
+        avoid.append("Do not run CPU/GPU-heavy workloads in this shell.")
+
+    return do, avoid
+
+
+def collect_context() -> dict:
+    hostname = socket.gethostname()
+    node_type = detect_node_type(hostname)
+    do, avoid = recommendations(node_type)
+    return {
+        "host": hostname,
+        "node_type": node_type,
+        "slurm_job": env_first("SLURM_JOB_ID"),
+        "partition": env_first("SLURM_JOB_PARTITION"),
+        "cpus": env_first("SLURM_CPUS_ON_NODE", "SLURM_CPUS_PER_TASK"),
+        "gpus": env_first("SLURM_GPUS", "SLURM_GPUS_ON_NODE", "SLURM_JOB_GPUS"),
+        "memory": env_first("SLURM_MEM_PER_NODE", "SLURM_MEM_PER_CPU"),
+        "current_directory": str(Path.cwd()),
+        "loaded_modules": module_list().splitlines(),
+        "recommended": do,
+        "avoid": avoid,
+        "warning": (
+            "No Slurm allocation was detected; treat this as a login node unless you know otherwise."
+            if node_type != "COMPUTE"
+            else ""
+        ),
+    }
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Print lightweight ORCD runtime context.")
+    parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    context = collect_context()
+    if args.json:
+        print(json.dumps(context, indent=2, sort_keys=True))
+        return 0
+
+    print("ORCD Agent Context")
+    print("------------------")
+    print(f"Host: {context['host']}")
+    print(f"Node type: {context['node_type']}")
+    print(f"Slurm job: {context['slurm_job']}")
+    print(f"Partition: {context['partition']}")
+    print(f"CPUs: {context['cpus']}")
+    print(f"GPUs: {context['gpus']}")
+    print(f"Memory: {context['memory']}")
+    print(f"Current directory: {context['current_directory']}")
+    print("Loaded modules:")
+    for line in context["loaded_modules"]:
+        print(f"  {line}")
+    print()
+    print("Recommended behavior:")
+    for item in context["recommended"]:
+        print(f"  + {item}")
+    for item in context["avoid"]:
+        print(f"  - {item}")
+    if context["warning"]:
+        print()
+        print(f"Warning: {context['warning']}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
