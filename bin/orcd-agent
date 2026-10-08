@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -23,7 +24,22 @@ For ORCD-specific environment and execution guidance, also read:
 Before expensive work, run:
 
 `orcd-agent context --json`
+
+For ORCD documentation, use:
+
+- `orcd-agent docs index`
+- `orcd-agent docs tree`
+- `orcd-agent docs grep "<term>"`
+- `orcd-agent docs read <path>`
 """
+
+
+def agent_home() -> Path:
+    return Path(os.environ.get("ORCD_AGENT_HOME", "~/.orcd-agent")).expanduser()
+
+
+def knowledge_dir() -> Path:
+    return agent_home() / "knowledge"
 
 
 def install_orcd_instructions(project_dir: Path, symlink: bool = False) -> Path:
@@ -89,6 +105,174 @@ def run_context(args: list[str]) -> int:
     return subprocess.call([str(context_cmd), *args], env=os.environ.copy())
 
 
+def require_knowledge_dir() -> Path | None:
+    root = knowledge_dir()
+    if not root.exists():
+        print(
+            f"ORCD knowledge directory not found at {root}. Run `python3 scripts/sync_docs.py` first.",
+            file=sys.stderr,
+        )
+        return None
+    return root
+
+
+def docs_index() -> int:
+    root = require_knowledge_dir()
+    if root is None:
+        return 2
+    index = root / "INDEX.md"
+    if not index.exists():
+        print(f"Missing documentation index: {index}", file=sys.stderr)
+        return 2
+    print(index.read_text(encoding="utf-8"), end="")
+    return 0
+
+
+def docs_tree(max_depth: int = 3, max_entries: int = 250) -> int:
+    root = require_knowledge_dir()
+    if root is None:
+        return 2
+    printed = 0
+
+    def walk(directory: Path, depth: int) -> None:
+        nonlocal printed
+        if depth > max_depth or printed >= max_entries:
+            return
+        entries = sorted(
+            [path for path in directory.iterdir() if not path.name.startswith(".") and not path.is_symlink()],
+            key=lambda path: (not path.is_dir(), path.name.lower()),
+        )
+        for path in entries:
+            if printed >= max_entries:
+                return
+            if path.is_dir() or path.suffix == ".md":
+                relative_depth = len(path.relative_to(root).parts) - 1
+                indent = "  " * relative_depth
+                suffix = "/" if path.is_dir() else ""
+                print(f"{indent}{path.name}{suffix}")
+                printed += 1
+                if path.is_dir():
+                    walk(path, depth + 1)
+
+    walk(root, 1)
+    if printed >= max_entries:
+        print(f"... output truncated after {max_entries} entries")
+    return 0
+
+
+def docs_grep(term: str) -> int:
+    root = require_knowledge_dir()
+    if root is None:
+        return 2
+    if shutil.which("rg"):
+        result = subprocess.run(
+            ["rg", "--fixed-strings", "--line-number", "--no-heading", "--glob", "*.md", term, "."],
+            cwd=root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if result.stdout:
+            print(result.stdout.replace("./", ""), end="")
+        if result.stderr:
+            print(result.stderr, end="", file=sys.stderr)
+        return result.returncode
+
+    found = False
+    for path in sorted(root.rglob("*.md")):
+        if path.is_symlink() or any(part.startswith(".") for part in path.relative_to(root).parts):
+            continue
+        for line_number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
+            if term in line:
+                print(f"{path.relative_to(root)}:{line_number}:{line}")
+                found = True
+    return 0 if found else 1
+
+
+def safe_doc_path(root: Path, user_path: str) -> Path:
+    candidate = (root / user_path).resolve()
+    resolved_root = root.resolve()
+    if candidate == resolved_root or resolved_root not in candidate.parents:
+        raise ValueError("documentation path must stay inside the ORCD knowledge directory")
+    if candidate.suffix != ".md":
+        raise ValueError("documentation path must point to a Markdown file")
+    return candidate
+
+
+def extract_heading(markdown: str, heading: str) -> str:
+    lines = markdown.splitlines()
+    wanted = heading.strip().casefold()
+    start: int | None = None
+    level: int | None = None
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        hashes = len(stripped) - len(stripped.lstrip("#"))
+        if hashes == 0 or hashes > 6 or not stripped[hashes : hashes + 1].isspace():
+            continue
+        text = stripped[hashes:].strip().rstrip("#").strip().casefold()
+        if start is None and text == wanted:
+            start = index
+            level = hashes
+            continue
+        if start is not None and hashes <= (level or 6):
+            return "\n".join(lines[start:index]).rstrip() + "\n"
+    if start is None:
+        raise ValueError(f"heading not found: {heading}")
+    return "\n".join(lines[start:]).rstrip() + "\n"
+
+
+def docs_read(path: str, heading: str | None = None) -> int:
+    root = require_knowledge_dir()
+    if root is None:
+        return 2
+    try:
+        doc_path = safe_doc_path(root, path)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if not doc_path.exists():
+        print(f"Documentation file not found: {path}", file=sys.stderr)
+        return 1
+    markdown = doc_path.read_text(encoding="utf-8")
+    if heading:
+        try:
+            markdown = extract_heading(markdown, heading)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+    print(markdown, end="" if markdown.endswith("\n") else "\n")
+    return 0
+
+
+def docs_manifest() -> int:
+    root = require_knowledge_dir()
+    if root is None:
+        return 2
+    manifest = root / ".manifest.json"
+    if not manifest.exists():
+        print(f"Missing documentation manifest: {manifest}", file=sys.stderr)
+        return 2
+    print(json.dumps(json.loads(manifest.read_text(encoding="utf-8")), indent=2, sort_keys=True))
+    return 0
+
+
+def docs_status() -> int:
+    root = require_knowledge_dir()
+    if root is None:
+        return 2
+    manifest = root / ".manifest.json"
+    if not manifest.exists():
+        print(f"Missing documentation manifest: {manifest}", file=sys.stderr)
+        return 2
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    print(f"Source: {data.get('source', data.get('source_repo', 'unknown'))}")
+    print(f"Source commit: {data.get('commit', data.get('source_commit', 'unknown'))}")
+    print(f"Last sync: {data.get('synced_at', 'unknown')}")
+    print(f"Files: {data.get('file_count', data.get('documents', 'unknown'))}")
+    print(f"Knowledge directory: {data.get('knowledge_dir', root)}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="orcd-agent", description="ORCD agent helper commands.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -97,6 +281,19 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--symlink", action="store_true", help="Symlink .orcd/AGENTS_ORCD.md instead of copying it.")
     context = subparsers.add_parser("context", help="Alias for orcd-context.")
     context.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
+    docs = subparsers.add_parser("docs", help="Navigate local ORCD Markdown documentation.")
+    docs_subparsers = docs.add_subparsers(dest="docs_command", required=True)
+    docs_subparsers.add_parser("index", help="Print the local ORCD documentation index.")
+    tree = docs_subparsers.add_parser("tree", help="Print a bounded tree of the local ORCD docs.")
+    tree.add_argument("--max-depth", type=int, default=3, help="Maximum directory depth to print.")
+    tree.add_argument("--max-entries", type=int, default=250, help="Maximum entries to print.")
+    grep = docs_subparsers.add_parser("grep", help="Search exact text in local ORCD Markdown files.")
+    grep.add_argument("term", help="Term or literal text to search for.")
+    read = docs_subparsers.add_parser("read", help="Print a local ORCD Markdown file.")
+    read.add_argument("path", help="Path relative to the ORCD knowledge directory.")
+    read.add_argument("--heading", help="Print only the section under this exact heading.")
+    docs_subparsers.add_parser("status", help="Print knowledge sync status.")
+    docs_subparsers.add_parser("manifest", help="Print raw knowledge sync metadata.")
     return parser
 
 
@@ -107,6 +304,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "context":
         context_args = ["--json"] if args.json else []
         return run_context(context_args)
+    if args.command == "docs":
+        if args.docs_command == "index":
+            return docs_index()
+        if args.docs_command == "tree":
+            return docs_tree(max_depth=args.max_depth, max_entries=args.max_entries)
+        if args.docs_command == "grep":
+            return docs_grep(args.term)
+        if args.docs_command == "read":
+            return docs_read(args.path, heading=args.heading)
+        if args.docs_command == "manifest":
+            return docs_manifest()
+        if args.docs_command == "status":
+            return docs_status()
     return 2
 
 

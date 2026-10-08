@@ -33,5 +33,29 @@ Follow these rules when working on MIT ORCD systems.
 ## ORCD Agent Tools
 
 - Run `orcd-context` at the beginning of a session to understand whether you are on a login node or inside a Slurm allocation.
-- Use `orcd-search "<question>"` for ORCD-specific questions before guessing.
 - If `orcd-context` reports no Slurm allocation, behave conservatively and avoid expensive commands.
+
+## ORCD Documentation
+
+Canonical local ORCD documentation is available through:
+
+- `orcd-agent docs index`
+- `orcd-agent docs tree`
+- `orcd-agent docs grep "<term>"`
+- `orcd-agent docs read <path>`
+
+For ORCD-specific operational questions, consult the local canonical documentation rather than relying only on prior model knowledge.
+
+Use the documentation like a small read-only codebase:
+
+1. inspect the index/tree,
+2. search likely terminology,
+3. read relevant files,
+4. follow related files when necessary.
+
+The CLI is a convenience, not a requirement. Direct filesystem access is intentional:
+
+```bash
+rg "miniforge" ~/.orcd-agent/knowledge
+cat ~/.orcd-agent/knowledge/software/python.md
+```

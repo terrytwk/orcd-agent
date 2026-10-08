@@ -10,7 +10,7 @@ Assume the generic ORCD/HPC awareness layer already exists and handles:
 - Slurm rules
 - module system
 - safe filesystem behavior
-- ORCD documentation retrieval
+- ORCD documentation access
 - `orcd-agent context`
 
 This new layer should give coding agents persistent project-specific knowledge about:

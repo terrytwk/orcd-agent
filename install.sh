@@ -2,13 +2,13 @@
 set -euo pipefail
 
 install_dir="${ORCD_AGENT_HOME:-$HOME/.orcd-agent}"
-repo_url="${ORCD_AGENT_REPO_URL:-https://github.com/mit-orcd/orcd-agent.git}"
+repo_url="${ORCD_AGENT_REPO_URL:-https://github.com/terrytwk/orcd-agent.git}"
 branch="${ORCD_AGENT_BRANCH:-main}"
 
 copy_tree() {
   local source="$1"
   mkdir -p "$install_dir"
-  for path in AGENTS.md bin docs templates scripts README.md; do
+  for path in AGENTS.md bin templates scripts README.md; do
     if [ -e "$source/$path" ]; then
       rm -rf "$install_dir/$path"
       cp -R "$source/$path" "$install_dir/$path"

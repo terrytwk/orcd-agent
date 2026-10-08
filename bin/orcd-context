@@ -56,7 +56,7 @@ def recommendations(node_type: str) -> tuple[list[str], list[str]]:
     do = [
         "Keep searches scoped to this project.",
         "Check/load modules before installing software.",
-        "Use `orcd-search \"<question>\"` for ORCD-specific guidance.",
+        "Use `orcd-agent docs index/tree/grep/read` for ORCD-specific guidance.",
     ]
     avoid = [
         "Do not run `find /`, `grep -R /`, `du /`, or other filesystem-wide scans.",

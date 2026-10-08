@@ -24,14 +24,9 @@ orcd-agent/
 ├── AGENTS.md
 ├── bin/
 │   ├── orcd-agent
-│   ├── orcd-context
-│   └── orcd-search
+│   └── orcd-context
 ├── scripts/
 │   └── sync_docs.py
-├── docs/
-│   ├── raw/
-│   ├── processed/
-│   └── manifest.json
 └── templates/
     ├── cpu.sbatch
     └── gpu.sbatch
@@ -60,7 +55,7 @@ Include at minimum:
 - Use Slurm for computational workloads.
 - Put environment/module setup inside Slurm scripts.
 - Run `orcd-context` at the beginning of a session.
-- Use `orcd-search "<question>"` for ORCD-specific questions.
+- Use `orcd-agent docs index/tree/grep/read` for ORCD-specific questions.
 
 Keep this file small: ideally <4,000 tokens.
 
@@ -122,88 +117,31 @@ Prefer pulling the source Markdown from the public ORCD documentation GitHub rep
 The script should:
 
 1. Download/update ORCD docs.
-2. Preserve source file hierarchy.
-3. Parse Markdown into sections based on headings.
-4. Preserve:
-   - title
-   - heading hierarchy
-   - source path
-   - source URL
-   - body text
-   - code blocks
-5. Produce a searchable JSONL file.
+2. Identify the canonical Markdown documentation root.
+3. Copy Markdown into `~/.orcd-agent/knowledge/`.
+4. Preserve relative directory/file structure.
+5. Preserve headings, code blocks, and links by preserving the source Markdown.
+6. Generate `~/.orcd-agent/knowledge/INDEX.md`.
+7. Generate `~/.orcd-agent/knowledge/.manifest.json`.
+8. Atomically replace the old local corpus after a successful sync.
 
-Example:
-
-```json
-{
-  "title": "Python",
-  "section": "Installing Python Packages",
-  "source_path": "software/python.md",
-  "url": "https://orcd-docs.mit.edu/software/python/",
-  "text": "...",
-  "code_blocks": [
-    "module load miniforge"
-  ]
-}
-```
-
-Output:
-
-```text
-docs/processed/orcd_docs.jsonl
-```
-
-Also generate:
-
-```text
-docs/manifest.json
-```
-
-containing source commit/version and sync timestamp.
+Do not chunk documents or generate retrieval-specific JSONL.
 
 ---
 
-## 4. `orcd-search`
+## 4. Documentation CLI
 
-Build a simple local documentation search CLI.
-
-Usage:
+Build simple local documentation navigation commands:
 
 ```bash
-orcd-search "how do I request a GPU?"
+orcd-agent docs index
+orcd-agent docs tree
+orcd-agent docs grep "miniforge"
+orcd-agent docs read software/python.md
+orcd-agent docs status
 ```
 
-For MVP, use keyword/BM25-style search. Do not add embeddings unless necessary.
-
-Search:
-
-```text
-docs/processed/orcd_docs.jsonl
-```
-
-Return the top 3–5 sections:
-
-```text
-[1] Running Jobs > GPU Jobs
-
-Relevant text...
-
-Commands:
-  #SBATCH --gres=gpu:1
-
-Source:
-https://orcd-docs.mit.edu/...
-```
-
-Prioritize:
-
-- heading matches
-- exact keywords
-- code blocks
-- short useful sections
-
-Keep output concise enough to feed directly into an LLM context window.
+These commands operate only inside `~/.orcd-agent/knowledge/`. Grep returns exact file/line matches with no ranking or scoring. Read must reject traversal and symlink escapes.
 
 ---
 
@@ -252,7 +190,7 @@ Example:
 ```text
 ~/.orcd-agent/
 ├── bin/
-├── docs/
+├── knowledge/
 ├── templates/
 └── AGENTS.md
 ```
@@ -336,16 +274,19 @@ Add basic tests for:
 - output never triggers expensive filesystem operations
 
 ### `sync_docs.py`
-- parses headings correctly
-- preserves code blocks
-- generates valid JSONL
-- handles changed/new documentation
+- copies canonical Markdown
+- preserves hierarchy, headings, code blocks, and links
+- generates `INDEX.md`
+- generates `.manifest.json`
+- removes deleted upstream files after resync
+- preserves the previous good corpus if sync fails
 
-### `orcd-search`
-- `"miniforge"` finds Python/module documentation
-- `"GPU"` finds Slurm/GPU documentation
-- `"storage"` finds storage documentation
-- returns source URLs
+### `orcd-agent docs`
+- `docs index` prints `INDEX.md`
+- `docs tree` shows a bounded tree
+- `docs grep "miniforge"` returns file/line matches
+- `docs read software/python.md` returns source Markdown
+- docs commands reject traversal and symlink escapes
 
 ### `orcd-agent init`
 - creates `.orcd/AGENTS_ORCD.md`
@@ -368,7 +309,9 @@ orcd-agent init
 
 orcd-context
 
-orcd-search "how should I set up Python?"
+orcd-agent docs index
+orcd-agent docs grep "miniforge"
+orcd-agent docs read software/python.md
 ```
 
 and a coding agent reading `AGENTS.md` will:
@@ -377,7 +320,7 @@ and a coding agent reading `AGENTS.md` will:
 - avoid filesystem-wide searches,
 - check modules before creating environments,
 - use Slurm for compute,
-- retrieve ORCD-specific guidance when needed.
+- inspect local ORCD Markdown guidance when needed.
 
 If a project already has `AGENTS.md`, that file remains untouched and authoritative. ORCD guidance is installed as `.orcd/AGENTS_ORCD.md`, and the user/agent can either load both files or explicitly append the small ORCD reference block.
 
