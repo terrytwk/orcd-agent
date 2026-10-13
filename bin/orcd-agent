@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Small project helper for ORCD agent setup."""
 
-from __future__ import annotations
-
 import argparse
 import json
 import os
@@ -34,15 +32,15 @@ For ORCD documentation, use:
 """
 
 
-def agent_home() -> Path:
+def agent_home():
     return Path(os.environ.get("ORCD_AGENT_HOME", "~/.orcd-agent")).expanduser()
 
 
-def knowledge_dir() -> Path:
+def knowledge_dir():
     return agent_home() / "knowledge"
 
 
-def install_orcd_instructions(project_dir: Path, symlink: bool = False) -> Path:
+def install_orcd_instructions(project_dir, symlink=False):
     source = ROOT / "AGENTS.md"
     target = project_dir / ".orcd" / "AGENTS_ORCD.md"
     if not source.exists():
@@ -57,11 +55,11 @@ def install_orcd_instructions(project_dir: Path, symlink: bool = False) -> Path:
     return target
 
 
-def has_reference_block(text: str) -> bool:
+def has_reference_block(text):
     return ".orcd/AGENTS_ORCD.md" in text and "ORCD / HPC context" in text
 
 
-def append_reference_block(agents_path: Path) -> bool:
+def append_reference_block(agents_path):
     existing = agents_path.read_text(encoding="utf-8")
     if has_reference_block(existing):
         return False
@@ -70,7 +68,7 @@ def append_reference_block(agents_path: Path) -> bool:
     return True
 
 
-def init_project(symlink: bool = False, append_reference: bool = False) -> int:
+def init_project(symlink=False, append_reference=False):
     project_dir = Path.cwd()
     try:
         orcd_target = install_orcd_instructions(project_dir, symlink=symlink)
@@ -100,12 +98,12 @@ def init_project(symlink: bool = False, append_reference: bool = False) -> int:
     return 0
 
 
-def run_context(args: list[str]) -> int:
+def run_context(args):
     context_cmd = ROOT / "bin" / "orcd-context"
     return subprocess.call([str(context_cmd), *args], env=os.environ.copy())
 
 
-def require_knowledge_dir() -> Path | None:
+def require_knowledge_dir():
     root = knowledge_dir()
     if not root.exists():
         print(
@@ -116,7 +114,7 @@ def require_knowledge_dir() -> Path | None:
     return root
 
 
-def docs_index() -> int:
+def docs_index():
     root = require_knowledge_dir()
     if root is None:
         return 2
@@ -128,13 +126,13 @@ def docs_index() -> int:
     return 0
 
 
-def docs_tree(max_depth: int = 3, max_entries: int = 250) -> int:
+def docs_tree(max_depth=3, max_entries=250):
     root = require_knowledge_dir()
     if root is None:
         return 2
     printed = 0
 
-    def walk(directory: Path, depth: int) -> None:
+    def walk(directory, depth):
         nonlocal printed
         if depth > max_depth or printed >= max_entries:
             return
@@ -160,7 +158,7 @@ def docs_tree(max_depth: int = 3, max_entries: int = 250) -> int:
     return 0
 
 
-def docs_grep(term: str) -> int:
+def docs_grep(term):
     root = require_knowledge_dir()
     if root is None:
         return 2
@@ -168,7 +166,7 @@ def docs_grep(term: str) -> int:
         result = subprocess.run(
             ["rg", "--fixed-strings", "--line-number", "--no-heading", "--glob", "*.md", term, "."],
             cwd=root,
-            text=True,
+            universal_newlines=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -189,7 +187,7 @@ def docs_grep(term: str) -> int:
     return 0 if found else 1
 
 
-def safe_doc_path(root: Path, user_path: str) -> Path:
+def safe_doc_path(root, user_path):
     candidate = (root / user_path).resolve()
     resolved_root = root.resolve()
     if candidate == resolved_root or resolved_root not in candidate.parents:
@@ -199,11 +197,11 @@ def safe_doc_path(root: Path, user_path: str) -> Path:
     return candidate
 
 
-def extract_heading(markdown: str, heading: str) -> str:
+def extract_heading(markdown, heading):
     lines = markdown.splitlines()
     wanted = heading.strip().casefold()
-    start: int | None = None
-    level: int | None = None
+    start = None
+    level = None
     for index, line in enumerate(lines):
         stripped = line.lstrip()
         hashes = len(stripped) - len(stripped.lstrip("#"))
@@ -221,7 +219,7 @@ def extract_heading(markdown: str, heading: str) -> str:
     return "\n".join(lines[start:]).rstrip() + "\n"
 
 
-def docs_read(path: str, heading: str | None = None) -> int:
+def docs_read(path, heading=None):
     root = require_knowledge_dir()
     if root is None:
         return 2
@@ -244,7 +242,7 @@ def docs_read(path: str, heading: str | None = None) -> int:
     return 0
 
 
-def docs_manifest() -> int:
+def docs_manifest():
     root = require_knowledge_dir()
     if root is None:
         return 2
@@ -256,7 +254,7 @@ def docs_manifest() -> int:
     return 0
 
 
-def docs_status() -> int:
+def docs_status():
     root = require_knowledge_dir()
     if root is None:
         return 2
@@ -273,16 +271,18 @@ def docs_status() -> int:
     return 0
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser():
     parser = argparse.ArgumentParser(prog="orcd-agent", description="ORCD agent helper commands.")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest="command")
+    subparsers.required = True
     init = subparsers.add_parser("init", help="Install ORCD guidance into the current project.")
     init.add_argument("--append-reference", action="store_true", help="Append a small ORCD reference block to AGENTS.md.")
     init.add_argument("--symlink", action="store_true", help="Symlink .orcd/AGENTS_ORCD.md instead of copying it.")
     context = subparsers.add_parser("context", help="Alias for orcd-context.")
     context.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     docs = subparsers.add_parser("docs", help="Navigate local ORCD Markdown documentation.")
-    docs_subparsers = docs.add_subparsers(dest="docs_command", required=True)
+    docs_subparsers = docs.add_subparsers(dest="docs_command")
+    docs_subparsers.required = True
     docs_subparsers.add_parser("index", help="Print the local ORCD documentation index.")
     tree = docs_subparsers.add_parser("tree", help="Print a bounded tree of the local ORCD docs.")
     tree.add_argument("--max-depth", type=int, default=3, help="Maximum directory depth to print.")
@@ -297,7 +297,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv=None):
     args = build_parser().parse_args(argv)
     if args.command == "init":
         return init_project(symlink=args.symlink, append_reference=args.append_reference)

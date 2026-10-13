@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Print lightweight ORCD runtime context for humans and coding agents."""
 
-from __future__ import annotations
-
 import os
 import argparse
 import json
@@ -20,7 +18,7 @@ MODULE_INIT_SCRIPTS = (
 )
 
 
-def env_first(*names: str, default: str = "not detected") -> str:
+def env_first(*names, default="not detected"):
     for name in names:
         value = os.environ.get(name)
         if value:
@@ -28,7 +26,7 @@ def env_first(*names: str, default: str = "not detected") -> str:
     return default
 
 
-def detect_node_type(hostname: str) -> str:
+def detect_node_type(hostname):
     if os.environ.get("SLURM_JOB_ID"):
         return "COMPUTE"
     lowered = hostname.lower()
@@ -38,7 +36,7 @@ def detect_node_type(hostname: str) -> str:
     return "UNKNOWN"
 
 
-def module_list() -> str:
+def module_list():
     init_scripts = [
         path
         for path in os.environ.get("ORCD_AGENT_MODULE_INIT", "").split(":")
@@ -66,7 +64,7 @@ fi
         result = subprocess.run(
             [shell, "-lc", command],
             check=False,
-            text=True,
+            universal_newlines=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             timeout=5,
@@ -78,7 +76,7 @@ fi
     return output if output else "no modules reported"
 
 
-def recommendations(node_type: str) -> tuple[list[str], list[str]]:
+def recommendations(node_type):
     do = [
         "Keep searches scoped to this project.",
         "Check/load modules before installing software.",
@@ -97,7 +95,7 @@ def recommendations(node_type: str) -> tuple[list[str], list[str]]:
     return do, avoid
 
 
-def collect_context() -> dict:
+def collect_context():
     hostname = socket.gethostname()
     node_type = detect_node_type(hostname)
     do, avoid = recommendations(node_type)
@@ -121,13 +119,13 @@ def collect_context() -> dict:
     }
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser():
     parser = argparse.ArgumentParser(description="Print lightweight ORCD runtime context.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv=None):
     args = build_parser().parse_args(argv)
     context = collect_context()
     if args.json:
