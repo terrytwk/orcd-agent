@@ -12,6 +12,14 @@ import subprocess
 from pathlib import Path
 
 
+MODULE_INIT_SCRIPTS = (
+    "/etc/profile.d/modules.sh",
+    "/etc/profile.d/lmod.sh",
+    "/usr/share/Modules/init/bash",
+    "/usr/share/lmod/lmod/init/bash",
+)
+
+
 def env_first(*names: str, default: str = "not detected") -> str:
     for name in names:
         value = os.environ.get(name)
@@ -31,11 +39,29 @@ def detect_node_type(hostname: str) -> str:
 
 
 def module_list() -> str:
-    if not shutil.which("modulecmd") and not shutil.which("module"):
-        return "module command not available"
-
-    shell = os.environ.get("SHELL", "/bin/bash")
-    command = "module list"
+    init_scripts = [
+        path
+        for path in os.environ.get("ORCD_AGENT_MODULE_INIT", "").split(":")
+        if path
+    ]
+    init_scripts.extend(MODULE_INIT_SCRIPTS)
+    init_block = "\n".join(
+        f'[ -r "{path}" ] && . "{path}" >/dev/null 2>&1 || true'
+        for path in init_scripts
+    )
+    command = f"""
+{init_block}
+if command -v module >/dev/null 2>&1; then
+  module list
+elif command -v modulecmd >/dev/null 2>&1; then
+  modulecmd sh list
+elif [ -n "${{LOADEDMODULES:-}}" ]; then
+  printf '%s\\n' "$LOADEDMODULES"
+else
+  printf '%s\\n' "module command not available"
+fi
+"""
+    shell = shutil.which("bash") or os.environ.get("SHELL", "/bin/bash")
     try:
         result = subprocess.run(
             [shell, "-lc", command],

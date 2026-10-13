@@ -46,6 +46,17 @@ def test_missing_module_command_is_reported() -> None:
     assert "module command not available" in result.stdout
 
 
+def test_shell_function_module_command_is_reported(tmp_path: Path) -> None:
+    init_script = tmp_path / "modules.sh"
+    init_script.write_text(
+        "module() { echo 'Currently Loaded Modules:'; echo '  miniforge/25.11.0-0'; }\n",
+        encoding="utf-8",
+    )
+    result = run_context({"ORCD_AGENT_MODULE_INIT": str(init_script)})
+    assert "Currently Loaded Modules:" in result.stdout
+    assert "miniforge/25.11.0-0" in result.stdout
+
+
 def test_context_source_has_no_expensive_filesystem_operations() -> None:
     source = CONTEXT.read_text(encoding="utf-8")
     forbidden_execution_shapes = [
