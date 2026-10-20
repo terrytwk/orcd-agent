@@ -22,12 +22,16 @@ Follow these rules when working on MIT ORCD systems.
   module load miniforge
   ```
 
-- Prefer project-local environments and caches. Avoid writing large temporary data into shared or home directories without checking quotas and project conventions.
+- Respect existing user and project configuration before choosing environment or cache locations. If variables such as `HF_HOME`, `HF_HUB_CACHE`, `HF_DATASETS_CACHE`, `XDG_CACHE_HOME`, `TORCH_HOME`, `PIP_CACHE_DIR`, or conda/mamba cache/env settings are already set, treat them as intentional and preserve them in commands and Slurm scripts.
+- Use project-local directories for project-specific virtual environments when appropriate, but do not move large reusable caches or downloaded models into the project directory unless the user asks.
+- Avoid writing large temporary data into shared or home directories without checking quotas, project conventions, and existing user-configured cache locations.
+- If no cache location is configured, prefer scratch or documented project storage for large temporary/reusable caches, and warn before writing large data into home, shared, or project directories.
 
 ## Slurm
 
 - Use Slurm for computational workloads.
 - Put environment and module setup inside Slurm scripts so jobs are reproducible.
+- Preserve relevant user/project environment variables in Slurm scripts, especially cache and data locations such as `HF_HOME`, `XDG_CACHE_HOME`, and `TORCH_HOME`.
 - Keep resource requests modest and explicit. Adjust partition, runtime, CPU count, memory, and GPU count for the job.
 
 ## ORCD Agent Tools
